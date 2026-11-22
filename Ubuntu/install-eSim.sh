@@ -23,7 +23,7 @@
 # Function to detect Ubuntu version and full version string
 get_ubuntu_version() {
     VERSION_ID=$(grep "^VERSION_ID" /etc/os-release | cut -d '"' -f 2)
-    FULL_VERSION=$(lsb_release -d | grep -oP '\d+\.\d+\.\d+')
+    FULL_VERSION=$(lsb_release -d | grep -oP '\d+\.\d+(\.\d+)?')
     echo "Detected Ubuntu Version: $FULL_VERSION"
 }
 
@@ -48,6 +48,10 @@ run_version_script() {
             ;;
         "25.04")
             SCRIPT="$SCRIPT_DIR/install-eSim-25.04.sh"
+            # Fallback to 24.04 script if dedicated 25.04 script is not present
+            if [[ ! -f "$SCRIPT" ]]; then
+                SCRIPT="$SCRIPT_DIR/install-eSim-24.04.sh"
+            fi
             ;;
         *)
             echo "Unsupported Ubuntu version: $VERSION_ID ($FULL_VERSION)"
@@ -59,14 +63,10 @@ run_version_script() {
     if [[ -f "$SCRIPT" ]]; then
         echo "Running script: $SCRIPT $ARGUMENT"
         bash "$SCRIPT" "$ARGUMENT"
-    echo "[eSim]" >> $config_dir/$config_file
-    echo "eSim_HOME = $eSim_Home" >> $config_dir/$config_file
-    echo "LICENSE = %(eSim_HOME)s/LICENSE" >> $config_dir/$config_file
-    echo "KicadLib = %(eSim_HOME)s/library/kicadLibrary.tar.xz" >> $config_dir/$config_file
-    echo "IMAGES = %(eSim_HOME)s/images" >> $config_dir/$config_file
-    echo "VERSION = %(eSim_HOME)s/VERSION" >> $config_dir/$config_file
-    echo "MODELICA_MAP_JSON = %(eSim_HOME)s/library/ngspicetoModelica/Mapping.json" >> $config_dir/$config_file
-   
+    else
+        echo "Version script not found at $SCRIPT"
+        exit 1
+    fi
 }
 
 
@@ -141,6 +141,11 @@ function installDependency {
     set +e      # Temporary disable exit on error
     trap "" ERR # Do not trap on error of any command
 
+    # Switch Ubuntu 25.04 (plucky) mirrors to old-releases if archived
+    if [ "$VERSION_ID" = "25.04" ]; then
+        sudo sed -i 's|http://[a-z.]*archive\.ubuntu\.com|http://old-releases.ubuntu.com|g; s|http://security\.ubuntu\.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+    fi
+
     echo "Updating apt index files..................."
     sudo apt-get update
     
@@ -175,8 +180,8 @@ function installDependency {
     echo "Installing Matplotlib......................"
     sudo apt-get install -y python3-matplotlib
     
-    echo "Installing Distutils......................."
-    sudo apt-get install -y python3-distutils
+    echo "Installing Setuptools (replaces python3-distutils on Ubuntu 25.04)..."
+    sudo apt-get install -y python3-setuptools
     
     echo "Installing Pip3............................"
     sudo apt install -y python3-pip
